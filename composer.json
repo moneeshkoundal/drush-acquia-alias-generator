@@ -1,12 +1,12 @@
 {
-  "name": "acquia-pso/drush-acquia-alias-generator",
+  "name": "moneeshkoundal/drush-acquia-alias-generator",
   "description": "Drush command to generate Acquia Cloud site aliases for ACE, ACP, and ACSF projects",
   "type": "drupal-drush",
   "license": "GPL-2.0-or-later",
   "authors": [
     {
-      "name": "Acquia PSO",
-      "email": "pso@acquia.com"
+      "name": "Moneesh Koundal",
+      "email": "moneesh.koundal@acquia.com"
     }
   ],
   "keywords": [
@@ -18,10 +18,10 @@
     "ace",
     "acp"
   ],
-  "homepage": "https://github.com/acquia-pso/drush-acquia-alias-generator",
+  "homepage": "https://github.com/moneeshkoundal/drush-acquia-alias-generator",
   "support": {
-    "issues": "https://github.com/acquia-pso/drush-acquia-alias-generator/issues",
-    "source": "https://github.com/acquia-pso/drush-acquia-alias-generator"
+    "issues": "https://github.com/moneeshkoundal/drush-acquia-alias-generator/issues",
+    "source": "https://github.com/moneeshkoundal/drush-acquia-alias-generator"
   },
   "require": {
     "php": ">=8.1",
@@ -34,7 +34,7 @@
   },
   "autoload": {
     "psr-4": {
-      "AcquiaPso\\DrushAcquiaAliasGenerator\\": "src/"
+      "Drush\\Commands\\drush_acquia_alias_generator\\": "src/"
     }
   },
   "extra": {
@@ -42,6 +42,12 @@
       "services": {
         "drush.services.yml": "^11 || ^12 || ^13"
       }
+    }
+  },
+  "repositories": {
+    "drush-acquia-alias-generator": {
+      "type": "vcs",
+      "url": "https://github.com/moneeshkoundal/drush-acquia-alias-generator"
     }
   }
 }

@@ -1,481 +1,489 @@
 <?php
 
-namespace AcquiaPso\DrushAcquiaAliasGenerator\Commands;
+namespace Drush\Commands\drush_acquia_alias_generator\Commands;
 
-use Drush\Commands\DrushCommands;
 use AcquiaCloudApi\Connector\Client;
 use AcquiaCloudApi\Connector\Connector;
-use AcquiaCloudApi\Endpoints\Account;
 use AcquiaCloudApi\Endpoints\Applications;
 use AcquiaCloudApi\Endpoints\Environments;
+use Drush\Commands\DrushCommands;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Drush commands for generating Acquia Cloud site aliases.
+ * Drush commands to generate Acquia Cloud Site Factory aliases.
  */
-class AcquiaAliasCommands extends DrushCommands {
+class AcquiaAliasCommands extends DrushCommands
+{
 
   /**
-   * Cloud API client.
+   * The Acquia Cloud API connector.
    *
    * @var \AcquiaCloudApi\Connector\Client
    */
   protected $cloudApiClient;
 
   /**
-   * App id.
+   * The Acquia application ID.
    *
    * @var string
    */
   protected $appId;
 
   /**
-   * Cloud config dir.
-   *
-   * @var string
-   */
-  protected $cloudConfDir;
-
-  /**
-   * Cloud config filename.
-   *
-   * @var string
-   */
-  protected $cloudConfFileName;
-
-  /**
-   * Cloud config file path.
-   *
-   * @var string
-   */
-  protected $cloudConfFilePath;
-
-  /**
-   * Site alias dir.
-   *
-   * @var string
-   */
-  protected $siteAliasDir;
-
-  /**
-   * Generates new Acquia site aliases for Drush.
+   * Initialize and generate Acquia Cloud aliases.
    *
    * @command acquia:aliases:init
    * @aliases raisa,acquia-aliases
    * @usage drush acquia:aliases:init
-   *   Generate Acquia Cloud site aliases.
-   * @usage ddev drush raisa
-   *   Generate Acquia Cloud site aliases in DDEV.
+   *   Generate Acquia Cloud Site Factory aliases.
+   * @usage drush raisa
+   *   Short alias to generate ACSF aliases.
    */
-  public function generateAliasesAcquia() {
-    $this->cloudConfDir = $_SERVER['HOME'] . '/.acquia';
-    $this->cloudConfFileName = 'cloud_api.conf';
-    $this->cloudConfFilePath = $this->cloudConfDir . '/' . $this->cloudConfFileName;
+  public function generateAliasesAcquia()
+  {
+    $this->say('Generating Acquia Cloud aliases...');
 
-    // Determine the site alias directory
-    $this->siteAliasDir = $this->getSiteAliasDir();
-
-    // Set the application ID
+    // Set the application ID.
     $this->setAppId();
 
-    // Load Cloud API configuration
-    $cloudApiConfig = $this->loadCloudApiConfig();
-    $this->setCloudApiClient($cloudApiConfig['key'], $cloudApiConfig['secret']);
+    // Load Cloud API configuration.
+    $this->loadCloudApiConfig();
 
-    $this->logger()->info("Gathering site info from Acquia Cloud...");
+    // Get site aliases from Acquia Cloud API.
+    $aliases = $this->getSiteAliases();
 
-    $applicationAdapter = new Applications($this->cloudApiClient);
-    $site = $applicationAdapter->get($this->appId);
-
-    $error = FALSE;
-    try {
-      $this->getSiteAliases($site);
-    }
-    catch (\Exception $e) {
-      $error = TRUE;
-      $this->logger()->error("Did not write aliases for {$site->name}. Error: " . $e->getMessage());
+    if (empty($aliases)) {
+      throw new \Exception('No aliases returned from Acquia Cloud API.');
     }
 
-    if (!$error) {
-      $this->logger()->success("Aliases were written successfully!");
-      $this->logger()->info("Run 'drush sa' or 'ddev drush sa' to see them.");
-    }
+    // Write aliases to files.
+    $this->writeSiteAliases($aliases);
+
+    $this->say(sprintf('Successfully generated %d alias file(s).', count($aliases)));
   }
 
   /**
-   * Gets the site alias directory path.
-   *
-   * @return string
-   *   The site alias directory path.
+   * Set the Acquia application ID.
    */
-  protected function getSiteAliasDir() {
-    // Try to find drush/sites directory relative to current directory
-    $possiblePaths = [
-      getcwd() . '/drush/sites',
-      getcwd() . '/../drush/sites',
-      $_SERVER['HOME'] . '/.drush/sites',
-    ];
-
-    foreach ($possiblePaths as $path) {
-      if (is_dir(dirname($path))) {
-        return $path;
-      }
-    }
-
-    // Default to drush/sites in current directory
-    return getcwd() . '/drush/sites';
-  }
-
-  /**
-   * Sets the Acquia application ID from environment or prompt.
-   */
-  protected function setAppId() {
-    // Try to get from environment variable first
-    if ($app_id = getenv('ACQUIA_APP_ID')) {
-      $this->appId = $app_id;
-      $this->logger()->info("Using application ID from ACQUIA_APP_ID environment variable.");
-      return;
-    }
-
-    // Try to load from config file
-    $configFile = getcwd() . '/.acquia.yml';
-    if (file_exists($configFile)) {
-      $config = Yaml::parseFile($configFile);
-      if (isset($config['cloud']['appId'])) {
-        $this->appId = $config['cloud']['appId'];
-        $this->logger()->info("Using application ID from .acquia.yml");
+  protected function setAppId()
+  {
+    // Try to get from .acquia.yml first.
+    $acquia_yml_path = getcwd() . '/.acquia.yml';
+    if (file_exists($acquia_yml_path)) {
+      $acquia_config = Yaml::parseFile($acquia_yml_path);
+      if (isset($acquia_config['cloud']['appId'])) {
+        $this->appId = $acquia_config['cloud']['appId'];
+        $this->say(sprintf('Found Application ID in .acquia.yml: %s', $this->appId));
         return;
       }
     }
 
-    // Prompt the user
-    $this->logger()->info("To generate aliases for Acquia Cloud, we need your application ID.");
-    $this->logger()->info("See: https://docs.acquia.com/acquia-cloud/manage/applications/#obtaining-your-subscription-s-application-id");
-    $this->appId = $this->io()->ask('Please enter your Acquia Cloud application ID');
+    // Try environment variable.
+    if (getenv('ACQUIA_APP_ID')) {
+      $this->appId = getenv('ACQUIA_APP_ID');
+      $this->say(sprintf('Found Application ID in environment: %s', $this->appId));
+      return;
+    }
 
-    // Save to config file
-    $this->writeAppConfig($this->appId);
+    // Prompt user for Application ID.
+    $this->appId = $this->io()->ask('Enter your Acquia Cloud Application ID (UUID)');
+
+    if (empty($this->appId)) {
+      throw new \Exception('Application ID is required.');
+    }
+
+    // Save to .acquia.yml for future use.
+    $acquia_config = ['cloud' => ['appId' => $this->appId]];
+    file_put_contents($acquia_yml_path, Yaml::dump($acquia_config, 2, 2));
+    $this->say(sprintf('Saved Application ID to .acquia.yml: %s', $this->appId));
   }
 
   /**
-   * Writes appId to .acquia.yml config file.
-   *
-   * @param string $app_id
-   *   The Acquia Cloud application UUID.
+   * Load Acquia Cloud API configuration and initialize client.
    */
-  protected function writeAppConfig($app_id) {
-    $configFile = getcwd() . '/.acquia.yml';
+  protected function loadCloudApiConfig()
+  {
+    $config_path = getenv('HOME') . '/.acquia/cloud_api.conf';
 
-    $config = [];
-    if (file_exists($configFile)) {
-      $config = Yaml::parseFile($configFile);
+    if (!file_exists($config_path)) {
+      $this->say('');
+      $this->say('Acquia Cloud API credentials not found at: ' . $config_path);
+      $this->say('');
+      $this->say('Create an API token at: https://cloud.acquia.com/a/profile/tokens');
+      $this->say('');
+
+      $api_key = $this->io()->ask('Enter your Acquia Cloud API Key (UUID format)');
+      $api_secret = $this->io()->askHidden('Enter your Acquia Cloud API Secret');
+
+      if (empty($api_key) || empty($api_secret)) {
+        throw new \Exception('API Key and Secret are required.');
+      }
+
+      // Create directory if it doesn't exist.
+      $config_dir = dirname($config_path);
+      if (!is_dir($config_dir)) {
+        mkdir($config_dir, 0700, TRUE);
+      }
+
+      // Save credentials.
+      $config_content = json_encode([
+        'key' => $api_key,
+        'secret' => $api_secret,
+      ], JSON_PRETTY_PRINT);
+      file_put_contents($config_path, $config_content);
+      chmod($config_path, 0600);
+
+      $this->say(sprintf('Saved Acquia Cloud API credentials to: %s', $config_path));
+      $this->say('');
+    } else {
+      $this->say(sprintf('Loading Acquia Cloud API credentials from: %s', $config_path));
     }
 
-    $config['cloud']['appId'] = $app_id;
+    // Load credentials and initialize client.
+    $credentials = json_decode(file_get_contents($config_path), TRUE);
 
-    try {
-      file_put_contents($configFile, Yaml::dump($config, 4, 2));
-      $this->logger()->success("Application ID saved to .acquia.yml");
+    // Handle different credential file formats.
+    $key = NULL;
+    $secret = NULL;
+
+    // Format 1: Direct key/secret at root.
+    if (isset($credentials['key']) && isset($credentials['secret'])) {
+      $key = $credentials['key'];
+      $secret = $credentials['secret'];
     }
-    catch (\Exception $e) {
-      $this->logger()->warning("Could not save application ID to .acquia.yml: " . $e->getMessage());
+    // Format 2: Keys array (Acquia CLI format).
+    elseif (isset($credentials['keys']) && is_array($credentials['keys'])) {
+      $keys = $credentials['keys'];
+      $first_key = reset($keys);
+      if ($first_key && isset($first_key['secret'])) {
+        $key = key($keys);
+        $secret = $first_key['secret'];
+      }
     }
-  }
-
-  /**
-   * Loads CloudAPI token from file or prompts for credentials.
-   *
-   * @return array
-   *   An array of CloudAPI token configuration.
-   */
-  protected function loadCloudApiConfig() {
-    if (!$config = $this->loadCloudApiConfigFile()) {
-      $config = $this->askForCloudApiCredentials();
+    // Format 3: acli_key format.
+    elseif (isset($credentials['acli_key'])) {
+      $key = $credentials['acli_key'];
+      $secret = $credentials['acli_secret'] ?? '';
     }
-    return $config;
-  }
-
-  /**
-   * Load existing credentials from disk.
-   *
-   * @return bool|array
-   *   Returns credentials as array on success, or FALSE on failure.
-   */
-  protected function loadCloudApiConfigFile() {
-    if (file_exists($this->cloudConfFilePath)) {
-      return (array) json_decode(file_get_contents($this->cloudConfFilePath));
-    }
-    return FALSE;
-  }
-
-  /**
-   * Interactive prompt to get Cloud API credentials.
-   *
-   * @return array
-   *   Returns credentials as array.
-   *
-   * @throws \Exception
-   */
-  protected function askForCloudApiCredentials() {
-    $this->logger()->info("You may generate new API tokens at: https://cloud.acquia.com/app/profile/tokens");
-
-    $key = $this->io()->ask('Please enter your Acquia Cloud API key');
-    $secret = $this->io()->askHidden('Please enter your Acquia Cloud API secret');
 
     if (empty($key) || empty($secret)) {
-      throw new \Exception("API key and secret are required.");
+      throw new \Exception('Invalid credentials file format. Could not find API key and secret.');
     }
 
-    // Attempt to set client to check credentials
+    // Debug output (only in verbose mode).
+    if ($this->output()->isVerbose()) {
+      $this->say(sprintf('Using API Key: %s', substr($key, 0, 8) . '...'));
+      $this->say(sprintf('Secret length: %d characters', strlen($secret)));
+    }
+
     $this->setCloudApiClient($key, $secret);
+  }
 
+  /**
+   * Set the Cloud API client.
+   *
+   * @param string $api_key
+   *   The API key.
+   * @param string $api_secret
+   *   The API secret.
+   */
+  protected function setCloudApiClient($api_key, $api_secret)
+  {
     $config = [
-      'key' => $key,
-      'secret' => $secret,
+      'key' => $api_key,
+      'secret' => $api_secret,
     ];
-
-    $this->writeCloudApiConfig($config);
-
-    return $config;
+    $connector = new Connector($config);
+    $this->cloudApiClient = Client::factory($connector);
   }
 
   /**
-   * Writes configuration to local file.
+   * Get site aliases from Acquia Cloud API.
    *
-   * @param array $config
-   *   An array of CloudAPI configuration.
+   * @return array
+   *   Array of site aliases keyed by site name.
    */
-  protected function writeCloudApiConfig(array $config) {
-    if (!is_dir($this->cloudConfDir)) {
-      mkdir($this->cloudConfDir, 0700, TRUE);
-    }
+  protected function getSiteAliases()
+  {
+    $this->say('Fetching application environments from Acquia Cloud API...');
 
-    file_put_contents($this->cloudConfFilePath, json_encode($config));
-    chmod($this->cloudConfFilePath, 0600);
-
-    $this->logger()->success("Credentials were written to {$this->cloudConfFilePath}");
-  }
-
-  /**
-   * Tests CloudAPI client authentication credentials.
-   *
-   * @param string $key
-   *   The Acquia token public key.
-   * @param string $secret
-   *   The Acquia token secret key.
-   *
-   * @throws \Exception
-   */
-  protected function setCloudApiClient($key, $secret) {
     try {
-      $connector = new Connector([
-        'key' => $key,
-        'secret' => $secret,
-      ]);
-      $cloud_api = Client::factory($connector);
+      $applications_api = new Applications($this->cloudApiClient);
+      $environments_api = new Environments($this->cloudApiClient);
 
-      // Test authentication by calling account endpoint
-      $account = new Account($cloud_api);
-      $account->get();
+      $application = $applications_api->get($this->appId);
+      $environments = $environments_api->getAll($this->appId);
+    } catch (\Exception $e) {
+      $error_msg = $e->getMessage();
+      $this->logger()->error('API Error: ' . $error_msg);
 
-      $this->cloudApiClient = $cloud_api;
-      $this->logger()->success("Successfully authenticated with Acquia Cloud API.");
-    }
-    catch (\Exception $e) {
-      if (strpos($e->getMessage(), '403') !== FALSE || strpos($e->getMessage(), 'Forbidden') !== FALSE) {
-        throw new \Exception("Invalid credentials. Failed to authenticate with Acquia Cloud API.");
+      if (strpos($error_msg, 'access_token') !== FALSE || strpos($error_msg, 'invalid_client') !== FALSE) {
+        $this->say('');
+        $this->say('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->say('  OAuth Authentication Failed');
+        $this->say('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->say('');
+        $this->say('The credentials in ' . getenv('HOME') . '/.acquia/cloud_api.conf are invalid or expired.');
+        $this->say('');
+        $this->say('To fix this:');
+        $this->say('  1. Delete the invalid credentials file:');
+        $this->say('     rm ' . getenv('HOME') . '/.acquia/cloud_api.conf');
+        $this->say('');
+        $this->say('  2. Re-run this command to enter new credentials:');
+        $this->say('     ddev drush raisa');
+        $this->say('');
+        $this->say('  3. Get new API credentials from:');
+        $this->say('     https://cloud.acquia.com/a/profile/tokens');
+        $this->say('');
+        $this->say('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->say('');
       }
-      throw new \Exception("Error connecting to Acquia Cloud API: " . $e->getMessage());
+
+      throw new \Exception(sprintf('Failed to fetch from Acquia Cloud API: %s', $error_msg));
     }
+
+    $hosting_type = isset($application->hosting->type) ? $application->hosting->type : 'ace';
+    $this->say(sprintf('Detected hosting type: %s', strtoupper($hosting_type)));
+
+    $aliases = [];
+
+    if ($hosting_type === 'acsf') {
+      // For ACSF, get sites from the factory.
+      $aliases = $this->getAcsfAliases($environments);
+    } else {
+      // For ACE/ACP, create aliases for each environment.
+      $aliases = $this->getAliases($application, $environments);
+    }
+
+    return $aliases;
   }
 
   /**
-   * Gets generated drush site aliases.
+   * Get aliases for ACE/ACP applications.
    *
-   * @param object $site
-   *   The Acquia subscription that aliases will be generated for.
+   * @param object $application
+   *   The application object.
+   * @param \AcquiaCloudApi\Response\EnvironmentsResponse $environments
+   *   Environments response object.
    *
-   * @throws \Exception
+   * @return array
+   *   Array of aliases.
    */
-  protected function getSiteAliases($site) {
+  protected function getAliases($application, $environments)
+  {
+    $aliases = [];
+    $site_id = $application->hosting->id;
+
+    foreach ($environments as $environment) {
+      $env_name = $environment->name;
+
+      // Get SSH URL.
+      $ssh_url = $environment->sshUrl ?? '';
+      if (empty($ssh_url)) {
+        $this->logger()->warning(sprintf('No SSH URL found for environment: %s', $env_name));
+        continue;
+      }
+
+      // Extract just the hostname from SSH URL (format: site.env@server.com)
+      $ssh_parts = explode('@', $ssh_url);
+      $ssh_host = isset($ssh_parts[1]) ? $ssh_parts[1] : $ssh_url;
+
+      // Get first domain or use default
+      $domains = $environment->domains ?? [];
+      $uri = !empty($domains) ? $domains[0] : "default";
+
+      $aliases[$env_name] = [
+        'host' => $ssh_host,
+        'user' => $site_id . '.' . $env_name,
+        'root' => "/var/www/html/{$site_id}.{$env_name}/docroot",
+        'uri' => $uri,
+      ];
+
+      $this->say(sprintf('  Added alias: @%s.%s', $site_id, $env_name));
+    }
+
+    return [$site_id => $aliases];
+  }
+
+  /**
+   * Get aliases for ACSF applications.
+   *
+   * @param \AcquiaCloudApi\Response\EnvironmentsResponse $environments
+   *   Environments response object.
+   *
+   * @return array
+   *   Array of aliases keyed by site ID.
+   */
+  protected function getAcsfAliases($environments)
+  {
+    $this->say('');
+    $this->say('ACSF application detected. Fetching sites data...');
+    $this->say('');
+
     $sites = [];
 
-    $this->logger()->info("Gathering environments from Acquia Cloud...");
-    $environmentAdapter = new Environments($this->cloudApiClient);
-    $environments = $environmentAdapter->getAll($site->uuid);
+    foreach ($environments as $environment) {
+      $env_name = $environment->name;
 
-    $hosting = $site->hosting->type;
-    $site_split = explode(':', $site->hosting->id);
-
-    foreach ($environments as $env) {
-      $domains = $env->domains;
-      $this->logger()->info("Found " . count($domains) . " domains for environment {$env->name}");
-
-      $ssh_split = explode('@', $env->sshUrl);
-      $envName = $env->name;
-      $remoteHost = $ssh_split[1];
-      $remoteUser = $ssh_split[0];
-
-      if (in_array($hosting, ['ace', 'acp'])) {
-        $siteID = $site_split[1];
-        $uri = $env->domains[0];
-        $siteAlias = $this->getAliases($uri, $envName, $remoteHost, $remoteUser, $siteID);
-        if ($siteAlias) {
-          $sites[$siteID][$envName] = $siteAlias[$envName];
-        }
+      // Get SSH URL.
+      $ssh_url = $environment->sshUrl ?? '';
+      if (empty($ssh_url)) {
+        $this->logger()->warning(sprintf('No SSH URL found for environment: %s', $env_name));
+        continue;
       }
 
-      if ($hosting == 'acsf') {
-        $this->logger()->info("ACSF project detected - generating sites data...");
-        try {
-          $acsf_sites = $this->getSitesJson($env->sshUrl, $remoteUser);
+      // Extract hostname and user from SSH URL (format: site.env@server.com)
+      $ssh_parts = explode('@', $ssh_url);
+      $ssh_host = isset($ssh_parts[1]) ? $ssh_parts[1] : $ssh_url;
+      $ssh_user = isset($ssh_parts[0]) ? $ssh_parts[0] : '';
 
-          if ($acsf_sites && isset($acsf_sites['sites'])) {
-            foreach ($acsf_sites['sites'] as $name => $info) {
-              $uri = NULL;
-              $siteID = NULL;
+      $this->say(sprintf('Gathering domains for environment: %s', $env_name));
+      $domains = $environment->domains ?? [];
+      $this->say(sprintf('  Found %d domains', count($domains)));
 
-              // Get site prefix from main domain
-              if (strpos($name, '.acsitefactory.com') !== FALSE) {
-                $acsf_site_name = explode('.', $name, 2);
-                $siteID = $acsf_site_name[0];
-              }
+      // Try to fetch sites.json for ACSF site-specific aliases
+      try {
+        $acsf_sites = $this->getSitesJson($ssh_url, $ssh_user);
 
-              // Only process sites with preferred domain
-              if (!empty($siteID) && !empty($info['flags']['preferred_domain'])) {
-                $uri = $name;
-                $siteAlias = $this->getAliases($uri, $envName, $remoteHost, $remoteUser, $siteID);
-                if ($siteAlias) {
-                  $sites[$siteID][$envName] = $siteAlias[$envName];
-                }
-              }
+        if ($acsf_sites && isset($acsf_sites['sites'])) {
+          foreach ($acsf_sites['sites'] as $name => $info) {
+            $site_id = NULL;
+
+            // Get site prefix from main domain
+            if (strpos($name, '.acsitefactory.com') !== FALSE) {
+              $acsf_site_name = explode('.', $name, 2);
+              $site_id = $acsf_site_name[0];
+            }
+
+            // Only process sites with preferred domain
+            if (!empty($site_id) && !empty($info['flags']['preferred_domain'])) {
+              $docroot = '/var/www/html/' . $ssh_user . '/docroot';
+
+              $sites[$site_id][$env_name] = [
+                'uri' => $name,
+                'host' => $ssh_host,
+                'root' => $docroot,
+                'user' => $ssh_user,
+                'ssh' => [
+                  'options' => '-p 22',
+                ],
+                'paths' => [
+                  'dump-dir' => '/mnt/tmp',
+                ],
+              ];
+
+              $this->say(sprintf('  Added alias: @%s.%s', $site_id, $env_name));
             }
           }
         }
-        catch (\Exception $e) {
-          $this->logger()->warning("Could not fetch ACSF data for {$envName}: " . $e->getMessage());
+      } catch (\Exception $e) {
+        $this->logger()->warning(sprintf('Could not fetch ACSF data for %s: %s', $env_name, $e->getMessage()));
+
+        // Fallback: create aliases from domains
+        foreach ($domains as $domain) {
+          // Skip wildcard domains
+          if (strpos($domain, ':*') !== FALSE) {
+            continue;
+          }
+
+          // Extract site ID from domain
+          $site_id = NULL;
+          if (strpos($domain, '.acsitefactory.com') !== FALSE) {
+            $parts = explode('.', $domain, 2);
+            $site_id = $parts[0];
+          }
+
+          if (!empty($site_id)) {
+            $docroot = '/var/www/html/' . $ssh_user . '/docroot';
+
+            $sites[$site_id][$env_name] = [
+              'uri' => $domain,
+              'host' => $ssh_host,
+              'root' => $docroot,
+              'user' => $ssh_user,
+              'ssh' => [
+                'options' => '-p 22',
+              ],
+              'paths' => [
+                'dump-dir' => '/mnt/tmp',
+              ],
+            ];
+
+            $this->say(sprintf('  Added alias: @%s.%s', $site_id, $env_name));
+          }
         }
       }
     }
 
-    // Write the alias files to disk
-    $count = 0;
-    foreach ($sites as $siteID => $aliases) {
-      $this->writeSiteAliases($siteID, $aliases);
-      $count++;
-    }
-
-    $this->logger()->success("Generated {$count} site alias file(s).");
+    return $sites;
   }
 
   /**
-   * Generates a site alias for valid domains.
+   * Get sites.json from ACSF environment via SCP.
    *
-   * @param string $uri
-   *   The unique site url.
-   * @param string $envName
-   *   The current environment.
-   * @param string $remoteHost
-   *   The remote host.
-   * @param string $remoteUser
-   *   The remote user.
-   * @param string $siteID
-   *   The siteID / group.
+   * @param string $ssh_url
+   *   The full SSH connection string (user.env@host.com).
+   * @param string $remote_user
+   *   The remote user (site.env format).
    *
    * @return array|null
-   *   The full alias for this site, or NULL if skipped.
+   *   Parsed sites.json data or NULL on failure.
    */
-  protected function getAliases($uri, $envName, $remoteHost, $remoteUser, $siteID) {
-    // Skip wildcard domains
-    if (strpos($uri, ':*') !== FALSE) {
-      return NULL;
+  protected function getSitesJson($ssh_url, $remote_user)
+  {
+    $temp_dir = getenv('HOME') . '/.acquia';
+    if (!is_dir($temp_dir)) {
+      mkdir($temp_dir, 0700, TRUE);
     }
 
-    $docroot = '/var/www/html/' . $remoteUser . '/docroot';
+    $temp_file = $temp_dir . '/sites.json';
+    $remote_path = "/mnt/files/{$remote_user}/files-private/sites.json";
 
-    $alias = [];
-    $alias[$envName] = [
-      'uri' => $uri,
-      'host' => $remoteHost,
-      'root' => $docroot,
-      'user' => $remoteUser,
-      'ssh' => [
-        'options' => '-p 22',
-      ],
-      'paths' => [
-        'dump-dir' => '/mnt/tmp',
-      ],
-    ];
-
-    return $alias;
-  }
-
-  /**
-   * Gets ACSF sites info without secondary API calls or Drupal bootstrap.
-   *
-   * @param string $sshFull
-   *   The full ssh connection string for this environment.
-   * @param string $remoteUser
-   *   The site.env remoteUser string used in the remote private files path.
-   *
-   * @return array|null
-   *   An array of ACSF site data for the current environment.
-   */
-  protected function getSitesJson($sshFull, $remoteUser) {
-    $this->logger()->info("Fetching ACSF sites.json...");
-
-    $tempFile = $this->cloudConfDir . '/sites.json';
-    $remotePath = "/mnt/files/{$remoteUser}/files-private/sites.json";
-
-    // Use scp to copy the file
+    // Use SCP to copy the file
     $command = sprintf(
-      'scp -o StrictHostKeyChecking=no -P 22 %s:%s %s 2>&1',
-      escapeshellarg($sshFull),
-      escapeshellarg($remotePath),
-      escapeshellarg($tempFile)
+      'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P 22 %s:%s %s 2>&1',
+      escapeshellarg($ssh_url),
+      escapeshellarg($remote_path),
+      escapeshellarg($temp_file)
     );
 
-    exec($command, $output, $returnCode);
+    exec($command, $output, $return_code);
 
-    if ($returnCode !== 0 || !file_exists($tempFile)) {
-      $this->logger()->warning("Unable to fetch ACSF sites.json: " . implode("\n", $output));
-      return NULL;
+    if ($return_code !== 0 || !file_exists($temp_file)) {
+      throw new \Exception('Unable to fetch sites.json: ' . implode("\n", $output));
     }
 
-    $response_body = file_get_contents($tempFile);
-    $sites_json = json_decode($response_body, TRUE);
+    $content = file_get_contents($temp_file);
+    $sites_json = json_decode($content, TRUE);
 
     // Clean up temp file
-    @unlink($tempFile);
+    @unlink($temp_file);
 
     return $sites_json;
   }
 
   /**
-   * Writes site aliases to disk.
+   * Write site aliases to YAML files.
    *
-   * @param string $site_id
-   *   The siteID or alias group.
    * @param array $aliases
-   *   The alias array for this site group.
-   *
-   * @throws \Exception
+   *   Array of aliases keyed by site ID.
    */
-  protected function writeSiteAliases($site_id, array $aliases) {
-    if (!is_dir($this->siteAliasDir)) {
-      mkdir($this->siteAliasDir, 0755, TRUE);
+  protected function writeSiteAliases(array $aliases)
+  {
+    $drush_dir = getcwd() . '/drush/sites';
+
+    if (!is_dir($drush_dir)) {
+      mkdir($drush_dir, 0755, TRUE);
+      $this->say(sprintf('Created directory: %s', $drush_dir));
     }
 
-    $filePath = $this->siteAliasDir . '/' . $site_id . '.site.yml';
+    foreach ($aliases as $site_id => $site_aliases) {
+      $alias_file = sprintf('%s/%s.site.yml', $drush_dir, $site_id);
 
-    if (file_exists($filePath)) {
-      if (!$this->io()->confirm("File {$filePath} already exists. Overwrite?", TRUE)) {
-        throw new \Exception("Aborted: User chose not to overwrite existing file.");
-      }
+      $yaml_content = Yaml::dump($site_aliases, 3, 2);
+      file_put_contents($alias_file, $yaml_content);
+
+      $this->say(sprintf('Wrote alias file: %s', basename($alias_file)));
     }
-
-    file_put_contents($filePath, Yaml::dump($aliases, 4, 2));
-    $this->logger()->success("Wrote aliases to {$filePath}");
   }
-
 }

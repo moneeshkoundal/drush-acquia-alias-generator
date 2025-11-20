@@ -1,0 +1,5 @@
+services:
+  drush_acquia_alias_generator.commands:
+    class: Drush\Commands\drush_acquia_alias_generator\Commands\AcquiaAliasCommands
+    tags:
+      - { name: drush.command }

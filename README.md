@@ -17,29 +17,35 @@ A Drush command to automatically generate site aliases for Acquia Cloud (ACE, AC
 ### Via Composer (Recommended)
 
 ```bash
-composer require acquia-pso/drush-acquia-alias-generator --dev
+composer require moneeshkoundal/drush-acquia-alias-generator --dev
 ```
 
 ### For DDEV Projects
 
 ```bash
-ddev composer require acquia-pso/drush-acquia-alias-generator --dev
+ddev composer require moneeshkoundal/drush-acquia-alias-generator --dev
 ```
 
 ### From GitHub (before Packagist submission)
 
 Add to your `composer.json`:
 
+Below command
+```
+composer config repositories.drush-acquia-alias-generator vcs https://github.com/moneeshkoundal/drush-acquia-alias-generator
+```
+ or use below json
+
 ```json
 {
   "repositories": [
     {
       "type": "vcs",
-      "url": "https://github.com/acquia-pso/drush-acquia-alias-generator"
+      "url": "https://github.com/moneeshkoundal/drush-acquia-alias-generator"
     }
   ],
   "require-dev": {
-    "acquia-pso/drush-acquia-alias-generator": "^1.0"
+    "moneeshkoundal/drush-acquia-alias-generator": "^1.0"
   }
 }
 ```
@@ -127,4 +133,4 @@ GPL-2.0-or-later
 
 ## Support
 
-Issues: https://github.com/acquia-pso/drush-acquia-alias-generator/issues
+Issues: https://github.com/moneeshkoundal/drush-acquia-alias-generator/issues

@@ -8,7 +8,7 @@
 #
 # Example format:
 # cloud:
-#   appId: 'a47ac10b-58cc-4372-a567-0e02b2c3d479'
+#   appId: '00000000-0000-0000-0000-000000000000'
 
 cloud:
   appId: ''
