@@ -1,0 +1,21 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Composer
+/vendor/
+composer.lock
+
+# Testing
+/phpunit.xml
+/.phpunit.result.cache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.acquia.yml

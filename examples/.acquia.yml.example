@@ -1,0 +1,14 @@
+# Acquia Cloud Configuration
+# This file stores your Acquia Cloud Application ID for alias generation
+#
+# To find your Application ID:
+# 1. Go to https://cloud.acquia.com
+# 2. Select your application
+# 3. Look for the UUID in the URL or application details
+#
+# Example format:
+# cloud:
+#   appId: 'a47ac10b-58cc-4372-a567-0e02b2c3d479'
+
+cloud:
+  appId: ''
